@@ -16,7 +16,7 @@ async def run():
     # flight_cost = Cost(start_node, end_node, step_sizes=(0.5, 0.5, 50))
     graph = flight_cost.generate_graph()
     optimal_path = flight_cost.calculate_optimal_path(graph)
-    flight_cost.plot_graph2(graph, optimal_path)
+    flight_cost.visualizer.plot_graph(graph, optimal_path)
 
     drone = System(mavsdk_server_address='localhost', port=50051)
     await drone.connect(system_address="udp://:14540")

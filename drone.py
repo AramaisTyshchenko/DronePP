@@ -1,4 +1,9 @@
 class Drone:
+    MAX_ALTITUDE = 1000  # Maximum altitude in meters
+    MIN_ALTITUDE = 50  # Minimum altitude in meters
+    MAX_SPEED = 20  # Maximum speed in m/s
+    MAX_TILT = 30  # Maximum tilt in degrees
+
     def __init__(self, lat, lon, alt, tilt, azimuth, roll, pitch, yaw, speed, efficiency=1,
                  battery_capacity=1, motor_efficiency=1, propeller_efficiency=1):
         self.max_height = 1000
