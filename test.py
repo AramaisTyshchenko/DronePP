@@ -10,9 +10,10 @@ from nodes import Node
 
 
 async def run():
-    start_node = Node(20.0567, -90.074, 100, time=datetime(2020, 6, 1, 14, 0, 0))
-    end_node = Node(20.7567, -90.894, 100)
-    flight_cost = Cost(start_node, end_node, step_sizes=(0.2, 0.2, 50))
+    start_node = Node(18.5567, -89.074, 100, time=datetime(2020, 7, 1, 10, 0, 0), name='start_node')
+    end_node = Node(25.7567, -95.894, 100, name='end_node')
+    flight_cost = Cost(start_node, end_node, step_sizes=(1, 1, 50))
+    # flight_cost = Cost(start_node, end_node, step_sizes=(0.5, 0.5, 50))
     graph = flight_cost.generate_graph()
     optimal_path = flight_cost.calculate_optimal_path(graph)
     flight_cost.plot_graph2(graph, optimal_path)

@@ -2,7 +2,7 @@ from datetime import datetime
 
 
 class Node:
-    def __init__(self, lat, lon, alt, time=datetime(1991, 6, 1, 0, 0, 0)):
+    def __init__(self, lat, lon, alt, time=datetime(1991, 6, 1, 0, 0, 0), name=None):
         self.lat = lat
         self.lon = lon
         self.alt = alt
@@ -15,6 +15,8 @@ class Node:
         self.wind: float = 0
         self.danger: float = 0
         self.loiter_time: float = 0
+        self.weather = 0
+        self.name: str = name
 
     # def __eq__(self, other):
     #     if not isinstance(other, Node):
@@ -40,5 +42,6 @@ class Node:
             f"\tWind: {self.wind}\n"
             f"\tDanger: {self.danger}\n"
             f"\tTime: {self.time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f"\tName: {self.name}\n"
             f")"
         )

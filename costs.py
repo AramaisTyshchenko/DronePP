@@ -37,10 +37,14 @@ class Cost:
         num_nodes = len(nodes)
         # Calculate expected number of edges
         expected_edges = num_nodes * (num_nodes - 1) // 2
-        print(f"The graph will have approximately {expected_edges} edges. Nodes length = {len(nodes)}")
+        distance = calculate_distance(nodes[0], nodes[1])
+        print(f"The graph will have approximately {expected_edges} edges. Nodes length = {len(nodes)},"
+              f"flight distance = {distance},"
+              f"start node = {nodes[0].info()},"
+              f"end node = {nodes[1].info()}")
 
     def sun_power_output(self, node1: Node, node2: Node):
-        weather = self.weather_data.get_weather_for_edge('open_meteo', node1, node2)
+        weather = self.weather_data.get_weather_for_edge(node1, node2)
         power_output = self.pv_system.power_output(weather, node1, node2)
         return power_output
 
@@ -65,7 +69,7 @@ class Cost:
         # node2.time = node1.time + timedelta(seconds=travel_time)
 
         distance = calculate_distance(node1, node2)
-        power_output_cost = 1/(0.1 + abs(self.sun_power_output(node1, node2)))
+        power_output_cost = abs(self.sun_power_output(node1, node2))
         distance_cost = abs(distance)
         return power_output_cost * self.pvsystem_coeff + distance_cost * self.distance_coeff
 
@@ -75,6 +79,7 @@ class Cost:
             [self.start_node.lat, self.start_node.lon, self.start_node.alt]) - self.step_sizes * self.grid_extension
         end_point = np.array(
             [self.end_node.lat, self.end_node.lon, self.end_node.alt]) + self.step_sizes * self.grid_extension
+
         # Compute number of steps needed for each dimension
         n_steps = np.ceil(np.abs((end_point - start_point) / self.step_sizes)).astype(int) + 1
         # Generate grid points for each dimension
@@ -82,13 +87,15 @@ class Cost:
                        zip(start_point, end_point, n_steps)]
         # Generate grid
         grid = np.stack(np.meshgrid(*grid_points), -1).reshape(-1, 3)
-        # Create Node objects
-
+        # Adjust the end node's time
         self.end_node.time = self.start_node.time + timedelta(seconds=
                                                               calculate_distance(self.start_node, self.end_node)
                                                               / self.speed)
+        self.start_node.weather = self.weather_data.get_weather('open_meteo', self.start_node)
+        self.end_node.weather = self.weather_data.get_weather('open_meteo', self.end_node)
 
         node_list = [self.start_node, self.end_node]
+
         for point in grid:
             lat, lon, alt = point
             # Create a Node for the current point
@@ -99,31 +106,102 @@ class Cost:
             travel_time = distance / self.speed
             # Adjust the time of the current node
             node.time = self.start_node.time + timedelta(seconds=travel_time)
+            # Fetch weather data for the current node
+            # Assign the weather data to the node attributes
+            node.weather = self.weather_data.get_weather('open_meteo', node)
             # Append the node to the list
             node_list.append(node)
 
         # # Filter nodes based on flight constraints
         # node_list = [node for node in node_list if self.MIN_ALTITUDE <= node.alt <= self.MAX_ALTITUDE]
+        # Calculate computational load
         self.calculate_computational_load(node_list)
         return node_list
 
+    def visual_offset(self, lat, lon, scale_factor=1.3):
+        """
+        Modify lat and lon for visualization purposes.
+        """
+        lat_offset = lat * scale_factor
+        lon_offset = lon * scale_factor
+        return lat_offset, lon_offset
+
     def plot_nodes(self, nodes):
-        fig = plt.figure()
+        # Apply visual scaling to lat and lon for all nodes
+        # scaled_lats = [self.visual_offset(node.lat, node.lon)[0] for node in nodes]
+        # scaled_lons = [self.visual_offset(node.lat, node.lon)[1] for node in nodes]
+        fig = plt.figure(figsize=(10, 8))
         ax = fig.add_subplot(111, projection='3d')
 
-        xs = [node.lon for node in nodes]
-        ys = [node.lat for node in nodes]
-        zs = [node.alt for node in nodes]
+        # Store data for quiver plot
+        wind_directions = []
+        wind_speeds = []
+        coords = []
 
-        ax.scatter(xs, ys, zs)
+        # Store data for precipitation
+        precipitation_coords = []
+        precipitation_sizes = []
 
-        # Highlight start and end nodes
-        ax.scatter(self.start_node.lon, self.start_node.lat, self.start_node.alt, color='r')
-        ax.scatter(self.end_node.lon, self.end_node.lat, self.end_node.alt, color='g')
+        # Store data for irradiance
+        irradiance_values = []
+
+        for node in nodes:
+            weather_info = node.weather.asof(node.time)
+
+            # 1. Color-code based on Total Sun Irradiance
+            irradiance_components = ['ghi', 'dhi', 'dni']
+            total_irradiance = sum([weather_info[component] for component in irradiance_components])
+            irradiance_values.append(total_irradiance)
+
+            # 2. Store Wind Direction and Strength data for quiver plot
+            wind_direction = weather_info['winddirection_100m']
+            wind_speed = weather_info['wind_speed']
+            wind_dx = wind_speed * np.cos(np.radians(wind_direction))
+            wind_dy = wind_speed * np.sin(np.radians(wind_direction))
+            wind_directions.append(wind_dx)
+            wind_speeds.append(wind_dy)
+            coords.append((node.lon, node.lat, node.alt))
+
+            # 3. Store Precipitation data
+            precipitation = weather_info['precipitation']
+            if precipitation > 0.1:  # Threshold for showing precipitation
+                precipitation_coords.append((node.lon, node.lat, node.alt))
+                precipitation_sizes.append(precipitation * 20)  # Adjust multiplier for visualization
+
+        # Scatter plot for nodes with color based on irradiance
+        colors = plt.cm.inferno(np.array(irradiance_values) / max(irradiance_values))
+        sc = ax.scatter([node.lon for node in nodes],
+                        [node.lat for node in nodes],
+                        [node.alt for node in nodes],
+                        c=irradiance_values, s=100, cmap='YlOrRd')
+        plt.colorbar(sc, ax=ax, label='Irradiance (W/m^2)')
+
+        # 2. Quiver plot for Wind Direction and Strength
+        quiver_coords = np.array(coords).T
+        ax.quiver(quiver_coords[0], quiver_coords[1], quiver_coords[2],
+                  wind_directions, wind_speeds, [0] * len(wind_directions),
+                  length=0.4, normalize=True, color='blue', label='Wind Vectors')
+
+        # 3. Scatter plot for Precipitation
+        if precipitation_coords:
+            precipitation_coords = np.array(precipitation_coords).T
+            ax.scatter(precipitation_coords[0], precipitation_coords[1], precipitation_coords[2],
+                       c='darkgreen', s=precipitation_sizes, marker='v', label='Precipitation')
+
+        # Highlight start and end nodes with distinct markers
+        ax.scatter(nodes[0].lon, nodes[0].lat, nodes[0].alt, marker='x', color='black', s=100, label='Start Node')
+        ax.scatter(nodes[-1].lon, nodes[-1].lat, nodes[-1].alt, marker='x', color='red', s=100, label='End Node')
 
         ax.set_xlabel('Longitude')
         ax.set_ylabel('Latitude')
         ax.set_zlabel('Altitude')
+
+        # Nighttime shading
+        nighttime_nodes = [node for node in nodes if 21 <= node.time.hour or node.time.hour < 4]
+        for node in nighttime_nodes:
+            ax.plot([node.lon], [node.lat], [node.alt], 'o', markersize=15, color='black', alpha=0)
+
+        ax.legend()
 
         plt.show()
 
