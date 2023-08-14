@@ -7,6 +7,7 @@ from mavsdk.mission import MissionPlan, MissionItem
 from costs import Cost
 from drone_telemetry import DroneState
 from nodes import Node
+from search import a_star, greedy_best_first_search
 
 
 async def run():
@@ -14,9 +15,21 @@ async def run():
     end_node = Node(25.7567, -95.894, 100, name='end_node')
     flight_cost = Cost(start_node, end_node, step_sizes=(1, 1, 50))
     # flight_cost = Cost(start_node, end_node, step_sizes=(0.5, 0.5, 50))
+
     graph = flight_cost.generate_graph()
-    optimal_path = flight_cost.calculate_optimal_path(graph)
-    flight_cost.visualizer.plot_graph(graph, optimal_path)
+
+    dijkstra_path = flight_cost.calculate_dijkstra_path(graph)
+    a_star_path = a_star(flight_cost.start_node, flight_cost.end_node, graph)
+    greedy_path = greedy_best_first_search(flight_cost.start_node, flight_cost.end_node, graph)
+
+    flight_cost.visualizer.plot_graph(graph, dijkstra_path)
+    flight_cost.visualizer.plot_graph(graph, a_star_path)
+
+    # # Run the Genetic Algorithm
+    # ga = GeneticAlgorithm(graph, flight_cost.start_node, flight_cost.end_node)
+    # ga_path = ga.run()
+
+
 
     drone = System(mavsdk_server_address='localhost', port=50051)
     await drone.connect(system_address="udp://:14540")

@@ -94,6 +94,7 @@ class Visualizer:
         for node in graph.nodes:
             weather_info = node.weather.asof(node.time)
 
+            # Gather data for various visualizations
             # 1. Color-code based on Total Sun Irradiance
             irradiance_components = ['ghi', 'dhi', 'dni']
             total_irradiance = sum([weather_info[component] for component in irradiance_components])
@@ -131,6 +132,23 @@ class Visualizer:
         ax.set_zlabel('Altitude')
         ax.legend()
 
+        plt.show()
+
+    def plot_graph2(self, graph, optimal_path=None):
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
+        # Plot all nodes in the graph
+        for node in graph.nodes:
+            ax.scatter(node.lon, node.lat, node.alt, color='blue')
+        # If an optimal path is provided, plot it as a line
+        if optimal_path is not None:
+            xs = [node.lon for node in optimal_path]
+            ys = [node.lat for node in optimal_path]
+            zs = [node.alt for node in optimal_path]
+            ax.plot(xs, ys, zs, color='red')
+        ax.set_xlabel('Longitude')
+        ax.set_ylabel('Latitude')
+        ax.set_zlabel('Altitude')
         plt.show()
 
     def visual_offset(self, lat, lon, scale_factor=1.3):

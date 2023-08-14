@@ -81,12 +81,15 @@ class Cost:
 
         node_list = [self.start_node, self.end_node]
 
+        shortest_distance = np.inf
         for point in grid:
             lat, lon, alt = point
             # Create a Node for the current point
             node = Node(lat=lat, lon=lon, alt=alt)
             # Calculate the distance from the start node to the current node
             distance = calculate_distance(self.start_node, node)
+            if distance and distance < shortest_distance:
+                shortest_distance = distance
             # Calculate the travel time from the start node to the current node
             travel_time = distance / self.speed
             # Adjust the time of the current node
@@ -97,6 +100,7 @@ class Cost:
             # Append the node to the list
             node_list.append(node)
 
+        self.start_node.shortest_distance = shortest_distance
         # # Filter nodes based on flight constraints
         # node_list = [node for node in node_list if self.MIN_ALTITUDE <= node.alt <= self.MAX_ALTITUDE]
         # Calculate computational load
@@ -110,21 +114,25 @@ class Cost:
         # Initialize an empty graph
         graph = nx.Graph()
 
+        # Maximum allowable distance for creating an edge
+        max_distance = nodes[0].shortest_distance * 2.5  # example: half an hour flight distance at max speed
+
         # Add the nodes to the graph
         for node in nodes:
             graph.add_node(node)
 
-        # Add the edges to the graph
+        # Add the edges to the graph with constraints
         for node1 in nodes:
             for node2 in nodes:
                 if node1 != node2:
-                    # The cost function is used to calculate the weight of the edge
-                    weight = self.cost(node1, node2)
-                    graph.add_edge(node1, node2, weight=weight)
+                    distance = calculate_distance(node1, node2)
+                    if distance <= max_distance:
+                        weight = self.cost(node1, node2)
+                        graph.add_edge(node1, node2, weight=weight)
 
         return graph
 
-    def calculate_optimal_path(self, graph):
+    def calculate_dijkstra_path(self, graph):
         # Find the shortest path in the graph from start_node to end_node
         optimal_path = nx.dijkstra_path(graph, self.start_node, self.end_node, weight='weight')
         return optimal_path
