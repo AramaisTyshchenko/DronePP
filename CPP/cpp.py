@@ -1,16 +1,16 @@
-from typing import Union
+from typing import Union, List, Tuple
 
 import matplotlib
 import numpy as np
 
-from CPP.helpers import calculate_transition_distances, optimize_sequence_nearest_neighbor
+from CPP.helpers import calculate_transition_distances, optimize_sequence_nearest_neighbor, \
+    construct_final_optimized_paths_consistent, calculate_transition_distances_enhanced, \
+    optimize_sequence_nearest_neighbor_flexible
 
 matplotlib.use('TkAgg')
 
-from shapely.geometry import Polygon, MultiPolygon
+from shapely.geometry import MultiPolygon, Polygon
 from cpp_utils import PolygonUtils, PathPlannerUtils, PlottingUtils
-
-from typing import List, Tuple
 
 
 def calculate_metrics(paths: List[List[Tuple[float, float]]],
@@ -93,9 +93,18 @@ class CPP:
             paths.append(path)
         return paths
 
-    def generate_shape_mimicking_spiral(self, fov_width, steps=100):
-        shape_mimicking_spirals = [PathPlannerUtils.generate_single_spiral(poly, fov_width, steps) for poly in
-                                   self.simple_polygons]
+    def generate_shape_mimicking_spiral(self, fov_width, angle_threshold=360, steps=1000):
+        shape_mimicking_spirals = []
+        simple_polygons = PolygonUtils.decompose_polygon(self.polygon, angle_threshold)
+        for poly in simple_polygons:
+            # Decompose MultiPolygon into individual Polygons
+            if poly.geom_type == 'MultiPolygon':
+                for sub_poly in poly.geoms:
+                    shape_mimicking_spirals.append(PathPlannerUtils.generate_single_spiral(sub_poly, fov_width, steps))
+            elif poly.geom_type == 'Polygon':
+                shape_mimicking_spirals.append(PathPlannerUtils.generate_single_spiral(poly, fov_width, steps))
+            else:
+                pass  # Handle other geometry types if needed
 
         total_path_length, total_turns, transition_distance, optimized_sequence = calculate_spiral_metrics(
             shape_mimicking_spirals)
@@ -109,7 +118,7 @@ class CPP:
             f"Total Transition Distance: {transition_distance:.2f} units"
         )
 
-        PlottingUtils.plot_combined_lawnmower_path(self.simple_polygons, optimized_combined_spirals, title)
+        PlottingUtils.plot_combined_lawnmower_path(simple_polygons, optimized_combined_spirals, title)
 
     def compute_rotated_paths_for_polygons(self, fov_width, angle_degrees=0):
         rotated_paths = self._generate_paths(PathPlannerUtils.compute_rotated_path, fov_width, angle_degrees)
@@ -197,3 +206,38 @@ class CPP:
         )
 
         PlottingUtils.plot_combined_lawnmower_path(self.simple_polygons, optimized_combined_paths, title=title)
+
+    def test_multiple_angles_for_decomposed_polygons_enhanced(self, fov_width, angle_step):
+        # Step 1: Compute Best Paths for Each Polygon (placeholder function here)
+        angles = np.arange(0, 180, angle_step)
+        best_paths = []  # Fill this using your existing method find_best_path_for_polygon
+        best_lengths = []  # Fill this too
+
+        for polygon in self.simple_polygons:
+            best_path, best_length = PathPlannerUtils.find_best_path_for_polygon(polygon, fov_width, angles)
+            best_paths.append(best_path)
+            best_lengths.append(best_length)
+
+        # Step 2: Calculate Enhanced Transition Distances
+        transition_distances = calculate_transition_distances_enhanced(best_paths)
+        # Step 3: Optimize Sequence and Configurations
+        optimized_sequence, configurations = (
+            optimize_sequence_nearest_neighbor_flexible(best_paths, transition_distances))
+        # Step 4: Construct Final Optimized Paths
+        optimized_paths = construct_final_optimized_paths_consistent(best_paths, optimized_sequence, configurations)
+        # Step 4.5: Calculate Total Transition Distance
+        total_transition_distance = PathPlannerUtils.calculate_total_transition_distance_for_path(optimized_sequence,
+                                                                                                  configurations,
+                                                                                                  transition_distances)
+
+        # Step 5: Calculate Metrics and Plot (placeholder function here)
+        total_path_length = sum(best_lengths)  # This should ideally be recalculated based on optimized_paths
+        num_turns = sum(PathPlannerUtils.count_turns_in_path(path) for path in optimized_paths)
+        title = (
+            f'Optimized Rotated Path with Multiple Angles \n'
+            f'Total Path Length: {total_path_length:.2f} units \n'
+            f'Total Turns: {num_turns:.2f} units\n'
+            f'Total Transition Distance: {total_transition_distance:.2f} units\n'
+        )
+
+        PlottingUtils.plot_combined_lawnmower_path(self.simple_polygons, optimized_paths, title=title)

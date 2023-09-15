@@ -3,20 +3,20 @@ This module contains utility classes and methods for UAV path planning.
 It includes methods for generating polygons, plotting, calculations, and path planning.
 """
 import matplotlib
-
-from CPP.helpers import calculate_angle_between_vectors, calculate_interior_angle
+import matplotlib.pyplot as plt
 
 matplotlib.use('TkAgg')
-
+import math
+from math import acos, degrees
 import random
 import numpy as np
 
-import matplotlib.pyplot as plt
-from shapely.geometry import LineString, Polygon, MultiPolygon
+from scipy.spatial import ConvexHull, Delaunay
 from shapely.affinity import rotate
+from shapely.geometry import Polygon, LineString, MultiPolygon
 from shapely.ops import unary_union, polygonize
 
-from scipy.spatial import ConvexHull, Delaunay
+from CPP.helpers import calculate_angle_between_vectors, calculate_interior_angle
 
 
 class PolygonGenerator:
@@ -233,6 +233,43 @@ class PolygonUtils:
         else:
             raise TypeError("The polygon attribute must be a Polygon or MultiPolygon")
 
+    @staticmethod
+    def extract_largest_convex_polygon(polygon, min_angle=60):
+        convex_hull = polygon.convex_hull
+        coords = list(convex_hull.exterior.coords)
+
+        new_coords = []
+        for i in range(len(coords) - 1):
+            # Compute vectors
+            ax, ay = coords[i]
+            bx, by = coords[i - 1]
+            cx, cy = coords[i + 1]
+
+            # Compute dot product
+            dot_product = ((bx - ax) * (cx - ax) + (by - ay) * (cy - ay))
+
+            # Compute magnitudes
+            mag1 = ((bx - ax) ** 2 + (by - ay) ** 2) ** 0.5
+            mag2 = ((cx - ax) ** 2 + (cy - ay) ** 2) ** 0.5
+
+            # Check if any magnitude is close to zero to avoid division by zero
+            if math.isclose(mag1, 0.0) or math.isclose(mag2, 0.0):
+                continue
+
+            # Compute angle in radians
+            angle = acos(dot_product / (mag1 * mag2))
+
+            # Convert to degrees
+            angle = degrees(angle)
+
+            if angle >= min_angle:
+                new_coords.append((ax, ay))
+
+        # Create new polygon
+        largest_convex_polygon = Polygon(new_coords)
+
+        return largest_convex_polygon
+
 
 class PathPlannerUtils:
     """
@@ -258,7 +295,7 @@ class PathPlannerUtils:
         return length
 
     @staticmethod
-    def count_turns_in_path(path, angle_threshold=30):
+    def count_turns_in_path(path, angle_threshold=60):
         """Count the number of turns in a path based on angle changes."""
         num_turns = 0
         for i in range(len(path) - 2):
@@ -273,7 +310,7 @@ class PathPlannerUtils:
         return num_turns
 
     @staticmethod
-    def lawnmower_path(polygon, fov_width, orientation='horizontal'):
+    def lawnmower_path(polygon, fov_width):
         """
          Generate lawnmower path for the given polygon.
         Parameters:
@@ -287,16 +324,12 @@ class PathPlannerUtils:
         # x_hex, y_hex: coordinates of the polygon vertices
         x_hex, y_hex = polygon.exterior.xy
         polygon = Polygon(zip(x_hex, y_hex))
-        if orientation == 'horizontal':
-            start, end = polygon.bounds[0], polygon.bounds[2]
-            lines = [LineString([(start, y), (end, y)]) for y in
-                     np.arange(polygon.bounds[1], polygon.bounds[3], fov_width)]
-        elif orientation == 'vertical':
-            start, end = polygon.bounds[1], polygon.bounds[3]
-            lines = [LineString([(x, start), (x, end)]) for x in
-                     np.arange(polygon.bounds[0], polygon.bounds[2], fov_width)]
-        else:
-            raise ValueError("Orientation should be 'horizontal' or 'vertical'")
+
+        # if orientation == 'horizontal':
+        start, end = polygon.bounds[0], polygon.bounds[2]
+        lines = [LineString([(start, y), (end, y)]) for y in
+                 np.arange(polygon.bounds[1], polygon.bounds[3], fov_width)]
+
         path = []
         for i, line in enumerate(lines):
             intersection = polygon.intersection(line)
@@ -312,27 +345,60 @@ class PathPlannerUtils:
         return path
 
     @staticmethod
-    def generate_single_spiral(poly, fov_width, steps):
+    def generate_single_spiral(poly, fov_width, steps, make_spiral=False, is_outer_polygon=True):
         spiral_path = []
-        tmp_poly = poly
+        prev_coords = None  # Store coordinates of the previous polygon
+
+        # Initially shrink the polygon by the camera's fov width if it's the outer polygon
+        if is_outer_polygon:
+            poly = poly.buffer(-0.5 * fov_width, join_style=3)
+            pass
+
         for _ in range(steps):
-            # Check if tmp_poly has become a MultiPolygon
-            if tmp_poly.geom_type == 'MultiPolygon':
-                for sub_poly in tmp_poly.geoms:
-                    x, y = sub_poly.exterior.coords.xy
-                    spiral_path.extend(list(zip(x, y)))
-                break  # Stop the process for this polygon
+            # Decompose MultiPolygon into individual Polygons
+            if poly.geom_type == 'MultiPolygon':
+                for sub_poly in poly.geoms:
+                    spiral_path.extend(PathPlannerUtils.generate_single_spiral(
+                        sub_poly, fov_width, steps, make_spiral, is_outer_polygon=False
+                    ))
+                return spiral_path
 
             # Get the exterior coordinates of the shrunken polygon
-            x, y = tmp_poly.exterior.coords.xy
-            spiral_path.extend(list(zip(x, y)))
+            x, y = poly.exterior.coords.xy
+            coords = list(zip(x, y))
 
+            # If this is not the first polygon and make_spiral is True, update the starting point A
+            if prev_coords is not None and make_spiral:
+                A = coords[0]
+                B = coords[1]
+                N, M = prev_coords[-2], prev_coords[-1]  # Last two points of the previous polygon
+
+                # Extend line AB by a large factor (e.g., 1000)
+                B_ext = (A[0] - 1000 * (B[0] - A[0]), A[1] - 1000 * (B[1] - A[1]))
+
+                line1 = LineString([A, B_ext])
+                line2 = LineString([N, M])
+
+                # Find intersection point
+                intersection = line1.intersection(line2)
+
+                if intersection.geom_type == 'Point':
+                    coords[0] = (intersection.x, intersection.y)
+
+            # Skip the last coordinate to create a gap
+            coords_with_gap = coords[:-1] if make_spiral else coords
+            # Extend the spiral path with updated coordinates
+            spiral_path.extend(coords_with_gap)
             # Shrink the polygon
-            tmp_poly = tmp_poly.buffer(-fov_width, join_style=3)
+            poly = poly.buffer(-fov_width, join_style=3)
 
             # Break if polygon has vanished or become a line
-            if tmp_poly.is_empty or tmp_poly.geom_type not in ["Polygon", "MultiPolygon"]:
+            if poly.is_empty or poly.geom_type not in ["Polygon", "MultiPolygon"]:
                 break
+
+            # Update prev_coords for the next iteration
+            prev_coords = coords
+
         return spiral_path
 
     @staticmethod
@@ -368,6 +434,37 @@ class PathPlannerUtils:
                 best_path = path
 
         return best_path, best_length
+
+    @staticmethod
+    def calculate_total_transition_distance_for_path(optimized_sequence, configurations, transition_distances):
+        """
+        Calculate the total transition distance based on the optimized sequence and configurations,
+        considering endpoints.
+
+        Parameters:
+        - optimized_paths: List of optimized paths for each polygon.
+        - optimized_sequence: List of indices representing the optimized sequence of polygons.
+        - configurations: List of configurations ('original' or 'swapped') for each polygon in the optimized sequence.
+        - transition_distances: Dictionary containing the distances between each pair of polygons.
+
+        Returns:
+        - total_transition_distance: The total transition distance between the optimized points.
+        """
+
+        total_transition_distance = 0
+
+        # Look up the transition distances based on the configurations and sequence
+        for i in range(len(optimized_sequence) - 1):
+            current_polygon = optimized_sequence[i]
+            next_polygon = optimized_sequence[i + 1]
+            config1 = configurations[i]
+            config2 = configurations[i + 1]
+
+            distance = transition_distances.get((current_polygon, next_polygon, config1, config2), 0)
+
+            total_transition_distance += distance
+
+        return total_transition_distance
 
 
 class PlottingUtils:
@@ -435,6 +532,8 @@ class PlottingUtils:
         """Helper method for common plotting operations."""
         PlottingUtils._setup_plot(title)
         previous_end_point = None
+        previous_color = None  # Added this variable to store the previous color
+
         for i, (poly, path) in enumerate(zip(simple_polygons, paths)):
             current_color = PlottingUtils.colors[i % len(PlottingUtils.colors)]
 
@@ -445,21 +544,23 @@ class PlottingUtils:
 
             # If there's a previous ending point, connect it to the current starting point
             if previous_end_point:
+                # Use previous_color instead of current_color for the dashed line and arrow
                 plt.plot([previous_end_point[0], path[0][0]], [previous_end_point[1], path[0][1]], '--',
-                         color=current_color, zorder=2)
+                         color=previous_color, zorder=2)
 
                 # Calculate the midpoint for the arrow
                 mid_x = (previous_end_point[0] + path[0][0]) / 2
                 mid_y = (previous_end_point[1] + path[0][1]) / 2
                 dx = (path[0][0] - mid_x) / 2
                 dy = (path[0][1] - mid_y) / 2
-                plt.arrow(mid_x, mid_y, dx, dy, shape='full', lw=0, length_includes_head=True, head_width=.25,
-                          color=current_color, zorder=3)
+                plt.arrow(mid_x, mid_y, dx, dy, shape='full', lw=0, length_includes_head=True, head_width=.15,
+                          color=previous_color, zorder=3)
 
             # Plot the path
             x_path, y_path = zip(*path)
             plt.plot(x_path, y_path, color=current_color)
             previous_end_point = path[-1]
+            previous_color = current_color  # Store the current color for the next iteration
 
         PlottingUtils._mark_start_end_points(paths)
         plt.axis('equal')

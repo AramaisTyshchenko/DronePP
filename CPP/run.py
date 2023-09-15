@@ -1,7 +1,7 @@
 import numpy as np
 
 from CPP.cpp import CPP
-from CPP.cpp_utils import PolygonUtils, PlottingUtils
+from CPP.cpp_utils import PolygonUtils
 
 
 def runner():
@@ -116,7 +116,7 @@ def runner():
     alpha = 0.7
     fov_width = 0.00003
     fov_width = 0.1
-    angle_threshold = 250
+    angle_threshold = 180
 
     concave_polygon = PolygonUtils.alpha_shape(points, alpha)
     cpp = CPP(concave_polygon, angle_threshold)
@@ -127,26 +127,31 @@ def runner():
 
     ############################################################
     ############################################################
-    concave_polygon = simple_polygons[0]
+    concave_polygon = simple_polygons[4]
     cpp = CPP(concave_polygon, angle_threshold)
     # Decompose the polygon
     simple_polygons = cpp.simple_polygons
     # # Plot decomposed polygons
-    PlottingUtils.plot_decomposed_polygons(simple_polygons)
+    # PlottingUtils.plot_decomposed_polygons(simple_polygons)
+
+    simple_polygons1 = PolygonUtils.decompose_polygon(concave_polygon, angle_threshold=360)
+    # simple_polygons2 = PolygonUtils.extract_largest_convex_polygon(concave_polygon, min_angle=60)
+    # PlottingUtils.plot_decomposed_polygons(simple_polygons1)
+    # PlottingUtils.plot_decomposed_polygons([simple_polygons2])
 
     ############################################################
     # Compute the lawnmower paths for the decomposed polygons
 
     # Generate shape-mimicking spirals for each decomposed polygon
-    # cpp.generate_shape_mimicking_spiral(fov_width=fov_width, steps=100)
+    # cpp.generate_shape_mimicking_spiral(fov_width=fov_width, angle_threshold=360, steps=100)
 
-    optimized_rotated_paths, _, _, _, title = (
-        cpp.compute_rotated_paths_for_polygons(fov_width, 30))
-    PlottingUtils.plot_combined_lawnmower_path(simple_polygons, optimized_rotated_paths, title)
-
-    # Test for multiple angles and find the shortest path using the rotation approach
-    cpp.test_multiple_angles(fov_width=fov_width, step=10)
-    cpp.test_multiple_angles_for_decomposed_polygons(fov_width=fov_width, angle_step=1)
+    # optimized_rotated_paths, _, _, _, title = (
+    #     cpp.compute_rotated_paths_for_polygons(fov_width, 30))
+    # PlottingUtils.plot_combined_lawnmower_path(simple_polygons, optimized_rotated_paths, title)
+    #
+    # # Test for multiple angles and find the shortest path using the rotation approach
+    # cpp.test_multiple_angles(fov_width=fov_width, step=10)
+    cpp.test_multiple_angles_for_decomposed_polygons_enhanced(fov_width=fov_width, angle_step=1)
 
 
 # Run the functions

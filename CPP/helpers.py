@@ -130,3 +130,125 @@ def optimize_sequence_nearest_neighbor(lawnmower_paths, transition_distances):
         remaining_polygons.remove(nearest_neighbor)
 
     return optimized_sequence
+
+
+def optimize_sequence_nearest_neighbor_flexible(lawnmower_paths, transition_distances):
+    """
+    Optimize the sequence of polygons to visit using the nearest-neighbor algorithm.
+    This version allows starting from any polygon and considers possible 'swapped' configuration for the first polygon.
+
+    Parameters:
+    - transition_distances: Dictionary containing the distances between each pair of polygons.
+
+    Returns:
+    - List of indices representing the optimized sequence of polygons to visit.
+    - List of configurations indicating whether each polygon is in 'original' or 'swapped' configuration.
+    """
+    best_sequence = None
+    best_configurations = None
+    best_distance = float('inf')
+
+    for start_polygon in range(len(lawnmower_paths)):
+        for start_config in ["original", "swapped"]:
+            current_polygon = start_polygon
+            current_config = start_config
+            remaining_polygons = set(range(len(lawnmower_paths))) - {start_polygon}
+
+            optimized_sequence = [current_polygon]
+            configurations = [current_config]
+            total_distance = 0
+
+            while remaining_polygons:
+                # Find the nearest neighboring polygon ensuring configuration consistency
+                nearest_neighbor, swap_config = min(
+                    ((j, swap_j) for j in remaining_polygons for swap_j in ["original", "swapped"]),
+                    key=lambda x: transition_distances.get((current_polygon, x[0], current_config, x[1]), float('inf'))
+                )
+
+                total_distance += transition_distances.get(
+                    (current_polygon, nearest_neighbor, current_config, swap_config), 0)
+
+                # Update the optimized sequence and configurations
+                optimized_sequence.append(nearest_neighbor)
+                configurations.append(swap_config)
+
+                # Move to the nearest neighboring polygon
+                current_polygon = nearest_neighbor
+                current_config = swap_config
+                remaining_polygons.remove(nearest_neighbor)
+
+            if total_distance < best_distance:
+                best_distance = total_distance
+                best_sequence = optimized_sequence
+                best_configurations = configurations
+
+    return best_sequence, best_configurations
+
+
+def construct_final_optimized_paths_consistent(lawnmower_paths, optimized_sequence, configurations):
+    """
+    Construct the final optimized paths based on the optimized sequence and consistent configurations.
+
+    Parameters:
+    - lawnmower_paths: Original list of lawnmower paths for each polygon.
+    - optimized_sequence: List of indices representing the optimized sequence of polygons to visit.
+    - configurations: List of configurations indicating whether each polygon is in 'original' or 'swapped' configuration.
+
+    Returns:
+    - List of final optimized paths.
+    """
+    optimized_paths = []
+    for i, polygon_index in enumerate(optimized_sequence):
+        path = lawnmower_paths[polygon_index]
+        config = configurations[i]
+
+        # Apply the configuration for this polygon
+        if config == 'swapped':
+            path = path[::-1]
+
+        optimized_paths.append(path)
+    return optimized_paths
+
+
+def calculate_euclidean_distance(point1, point2):
+    """
+    Calculate the Euclidean distance between two points.
+    """
+    return np.sqrt((point1[0] - point2[0]) ** 2 + (point1[1] - point2[1]) ** 2)
+
+
+def calculate_transition_distances_enhanced(paths):
+    """
+    Calculate the transition distance between each pair of polygons for all possible combinations of start and end points.
+
+    Parameters:
+    - paths: List of lawnmower paths for each polygon.
+
+    Returns:
+    - Dictionary with keys as (i, j, swap_i, swap_j) representing indices of the two polygons and the type of transition,
+      and values as the shortest distance between them.
+    """
+    # Collect all start and end points
+    all_start_points = [path[0] for path in paths]
+    all_end_points = [path[-1] for path in paths]
+
+    transition_distances = {}
+    for i, j in product(range(len(paths)), repeat=2):
+        if i == j:
+            continue  # Skip same polygon
+
+        # Points for path i
+        start_i = all_start_points[i]
+        end_i = all_end_points[i]
+
+        # Points for path j
+        start_j = all_start_points[j]
+        end_j = all_end_points[j]
+
+        # Calculate distances for all possible combinations of start and end points
+        transition_distances[(i, j, "original", "original")] = calculate_euclidean_distance(end_i, start_j)
+        transition_distances[(i, j, "swapped", "original")] = calculate_euclidean_distance(start_i, start_j)
+        transition_distances[(i, j, "original", "swapped")] = calculate_euclidean_distance(end_i, end_j)
+        transition_distances[(i, j, "swapped", "swapped")] = calculate_euclidean_distance(start_i, end_j)
+
+    return transition_distances
