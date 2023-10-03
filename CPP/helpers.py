@@ -1,11 +1,49 @@
+import math
 from itertools import product
 
 import numpy as np
+from mavsdk.mission import MissionPlan, MissionItem
 from pyproj import Proj
 from scipy.spatial.distance import euclidean
 
 
-def latlon_to_utm(lat: list, lon: list) -> tuple:
+def compute_utm_zone_number(longitude):
+    """
+    Compute the UTM zone number for a given longitude.
+
+    Parameters:
+    - longitude (float): Longitude for which to compute the UTM zone number.
+
+    Returns:
+    - int: UTM zone number.
+    """
+    # return int((longitude + 180) / 6) + 1
+    # Cancabchen, Mexico is in UTM zone 16Q
+    # Adjust this value if working with a different region
+    return 16
+
+
+def latlon_to_utm(points: np.array) -> np.array:
+    """
+    Convert latitude and longitude to UTM coordinates.
+
+    Parameters:
+    - points (np.array): Array of latitude and longitude coordinates.
+
+    Returns:
+    - np.array: Array containing UTM x and y coordinates.
+    """
+    lat = points[:, 0]
+    lon = points[:, 1]
+
+    zone_number = compute_utm_zone_number(lon[0])
+    p = Proj(proj='utm', zone=zone_number, ellps='WGS84')
+    x, y = p(lon, lat)
+
+    return np.array(list(zip(x, y)))
+
+
+def latlon_to_utm1(lat: list, lon: list) -> tuple:
     """
     Convert latitude and longitude to UTM coordinates.
 
@@ -217,12 +255,13 @@ def calculate_euclidean_distance(point1, point2):
     return np.sqrt((point1[0] - point2[0]) ** 2 + (point1[1] - point2[1]) ** 2)
 
 
-def calculate_transition_distances_enhanced(paths):
+def calculate_transition_distances_enhanced(paths, use_haversine=True):
     """
     Calculate the transition distance between each pair of polygons for all possible combinations of start and end points.
 
     Parameters:
     - paths: List of lawnmower paths for each polygon.
+    - use_haversine: Flag to decide between using the haversine or Euclidean distance.
 
     Returns:
     - Dictionary with keys as (i, j, swap_i, swap_j) representing indices of the two polygons and the type of transition,
@@ -245,10 +284,110 @@ def calculate_transition_distances_enhanced(paths):
         start_j = all_start_points[j]
         end_j = all_end_points[j]
 
+        # Determine which distance calculation to use
+        distance_function = haversine_distance if use_haversine else calculate_euclidean_distance
+
         # Calculate distances for all possible combinations of start and end points
-        transition_distances[(i, j, "original", "original")] = calculate_euclidean_distance(end_i, start_j)
-        transition_distances[(i, j, "swapped", "original")] = calculate_euclidean_distance(start_i, start_j)
-        transition_distances[(i, j, "original", "swapped")] = calculate_euclidean_distance(end_i, end_j)
-        transition_distances[(i, j, "swapped", "swapped")] = calculate_euclidean_distance(start_i, end_j)
+        transition_distances[(i, j, "original", "original")] = distance_function(end_i, start_j)
+        transition_distances[(i, j, "swapped", "original")] = distance_function(start_i, start_j)
+        transition_distances[(i, j, "original", "swapped")] = distance_function(end_i, end_j)
+        transition_distances[(i, j, "swapped", "swapped")] = distance_function(start_i, end_j)
 
     return transition_distances
+
+
+def haversine_distance(coord1, coord2):
+    """
+    Calculate the Haversine distance between two points on the earth specified by latitude/longitude.
+
+    Parameters:
+    - coord1: tuple (latitude, longitude) for the first point
+    - coord2: tuple (latitude, longitude) for the second point
+
+    Returns:
+    - distance in meters
+    """
+    R = 6371000  # Earth radius in meters
+
+    lat1, lon1 = math.radians(coord1[0]), math.radians(coord1[1])
+    lat2, lon2 = math.radians(coord2[0]), math.radians(coord2[1])
+
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+
+    a = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+    distance = R * c
+    return distance
+
+
+def is_southern_hemisphere(y):
+    """
+    Check if a UTM y-coordinate is in the southern hemisphere.
+
+    Parameters:
+    - y (float): UTM y-coordinate.
+
+    Returns:
+    - bool: True if in the southern hemisphere, False otherwise.
+    """
+    return y < 10_000_000
+
+
+def utm_to_latlon(x, y, zone_number):
+    """
+    Convert UTM coordinates to latitude and longitude.
+
+    Parameters:
+    - x (float or list): UTM x coordinate(s).
+    - y (float or list): UTM y coordinate(s).
+    - zone_number (int): UTM zone number.
+
+    Returns:
+    - tuple: Latitude and longitude coordinates.
+    """
+    p = Proj(proj='utm', zone=zone_number, ellps='WGS84', south=is_southern_hemisphere(y))
+    lon, lat = p(x, y, inverse=True)
+    return lat, lon
+
+
+def create_mission_from_path(path, altitude=30, speed=60, camera_action_interval=1):
+    """
+    Create a mission plan from the given path.
+
+    Parameters:
+    - path (list): List of points.
+    - altitude (float): Altitude for the mission items.
+    - speed (float): Speed for the mission items.
+    - camera_action_interval (int): Interval at which to trigger camera actions.
+
+    Returns:
+    - MissionPlan: Mission plan containing the mission items.
+    """
+    # lat, lon = utm_to_latlon(point[0], point[1], zone_number)
+    mission_items = []
+    mission_item_positions = []  # A list to hold the positions of each mission item
+
+
+    for idx, point in enumerate(path[0]):
+            lat, lon = point[0], point[1]
+            mission_item_positions.append((lat, lon))  # Save the position to mission_item_positions
+
+            # Start taking photos at the first point
+            if idx == 0:
+                camera_action = MissionItem.CameraAction.START_PHOTO_INTERVAL
+            # Stop taking photos at the last point
+            elif idx == len(path[0]) - 1:
+                camera_action = MissionItem.CameraAction.STOP_PHOTO_INTERVAL
+            # Continue with interval photos at intermediate points
+            else:
+                camera_action = MissionItem.CameraAction.NONE
+
+            mission_item = MissionItem(
+                lat, lon, altitude, speed, True, 0, 0,
+                camera_action, 0, camera_action_interval, 0, 1, 0
+            )
+            mission_items.append(mission_item)
+
+    return MissionPlan(mission_items), mission_item_positions

@@ -15,3 +15,8 @@ class DroneState:
     async def update_battery(self, drone):
         async for battery in drone.telemetry.battery():
             self.battery = battery
+
+    async def update_mission_progress(self, drone):
+        async for mission_progress in drone.mission.mission_progress():
+            self.current_mission_item = mission_progress.current
+            self.total_mission_items = mission_progress.total

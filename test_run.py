@@ -31,40 +31,40 @@ async def run():
 
 
 
-    drone = System(mavsdk_server_address='localhost', port=50051)
-    await drone.connect(system_address="udp://:14540")
-
-    # Define mission items
-    mission_items = [
-        MissionItem(20.0077, -90.0743, 15, 10, True, 0, 0, MissionItem.CameraAction.NONE, 0, 0, 1, 0, 0),
-        MissionItem(20.0030, -90.0843, 20, 10, True, 0, 0, MissionItem.CameraAction.NONE, 0, 0, 1, 0, 0),
-        MissionItem(20.0000, -90.074, 15, 10, True, 0, 0, MissionItem.CameraAction.NONE, 0, 0, 1, 0, 0),
-    ]
-
-    mission_plan = MissionPlan(mission_items)
-    await drone.mission.upload_mission(mission_plan)
-
-    print("Starting mission...")
-    await drone.action.arm()
-    await drone.mission.start_mission()
-
-    # later, in your run function...
-    state = DroneState()
-    update_task = asyncio.create_task(state.update_position(drone))
-    update_task2 = asyncio.create_task(state.update_battery(drone))
-
-    # ...
-    # when you need to access the position:
-    while True:
-        await asyncio.sleep(1)
-
-        print(state.position)
-        print(state.update_euler_angle)
-        print(state.battery)
-
-    # Remember to cancel the task when you're done with it
-    update_task.cancel()
-    update_task2.cancel()
+    # drone = System(mavsdk_server_address='localhost', port=50051)
+    # await drone.connect(system_address="udp://:14540")
+    #
+    # # Define mission items
+    # mission_items = [
+    #     MissionItem(20.0077, -90.0743, 15, 10, True, 0, 0, MissionItem.CameraAction.NONE, 0, 0, 1, 0, 0),
+    #     MissionItem(20.0030, -90.0843, 20, 10, True, 0, 0, MissionItem.CameraAction.NONE, 0, 0, 1, 0, 0),
+    #     MissionItem(20.0000, -90.074, 15, 10, True, 0, 0, MissionItem.CameraAction.NONE, 0, 0, 1, 0, 0),
+    # ]
+    #
+    # mission_plan = MissionPlan(mission_items)
+    # await drone.mission.upload_mission(mission_plan)
+    #
+    # print("Starting mission...")
+    # await drone.action.arm()
+    # await drone.mission.start_mission()
+    #
+    # # later, in your run function...
+    # state = DroneState()
+    # update_task = asyncio.create_task(state.update_position(drone))
+    # update_task2 = asyncio.create_task(state.update_battery(drone))
+    #
+    # # ...
+    # # when you need to access the position:
+    # while True:
+    #     await asyncio.sleep(1)
+    #
+    #     print(state.position)
+    #     print(state.update_euler_angle)
+    #     print(state.battery)
+    #
+    # # Remember to cancel the task when you're done with it
+    # update_task.cancel()
+    # update_task2.cancel()
 
 
 if __name__ == "__main__":

@@ -88,9 +88,11 @@ class CPP:
         for i, poly in enumerate(self.simple_polygons):
             path = generate_path_function(poly, fov_width, angle_degrees) if angle_degrees else generate_path_function(
                 poly, fov_width)
-            if i % 2 != 0:
-                path = path[::-1]
-            paths.append(path)
+
+            if path:
+                if i % 2 != 0:
+                    path = path[::-1]
+                paths.append(path)
         return paths
 
     def generate_shape_mimicking_spiral(self, fov_width, angle_threshold=360, steps=1000):
@@ -119,6 +121,7 @@ class CPP:
         )
 
         PlottingUtils.plot_combined_lawnmower_path(simple_polygons, optimized_combined_spirals, title)
+        return optimized_combined_spirals
 
     def compute_rotated_paths_for_polygons(self, fov_width, angle_degrees=0):
         rotated_paths = self._generate_paths(PathPlannerUtils.compute_rotated_path, fov_width, angle_degrees)
@@ -241,3 +244,5 @@ class CPP:
         )
 
         PlottingUtils.plot_combined_lawnmower_path(self.simple_polygons, optimized_paths, title=title)
+
+        return optimized_paths

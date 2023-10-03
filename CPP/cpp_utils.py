@@ -16,7 +16,7 @@ from shapely.affinity import rotate
 from shapely.geometry import Polygon, LineString, MultiPolygon
 from shapely.ops import unary_union, polygonize
 
-from CPP.helpers import calculate_angle_between_vectors, calculate_interior_angle
+from CPP.helpers import calculate_angle_between_vectors, calculate_interior_angle, haversine_distance
 
 
 class PolygonGenerator:
@@ -25,21 +25,21 @@ class PolygonGenerator:
     """
 
     @staticmethod
-    def generate_random_lat_lon_points(num_points=9, lat_range=(40.7120, 40.7150), lon_range=(-74.0070, -74.0050)):
+    def generate_random_lat_lon_points(num_points=9, lat_range=(20.0020, 20.0050), lon_range=(-90.0770, -90.0750)):
         """
-          Generate a list of random latitude and longitude points.
+        Generate an array of random latitude and longitude points.
 
-          Parameters:
-          - num_points (int): Number of random points to generate.
-          - lat_range (tuple): Range for latitude.
-          - lon_range (tuple): Range for longitude.
+        Parameters:
+        - num_points (int): Number of random points to generate.
+        - lat_range (tuple): Range for latitude.
+        - lon_range (tuple): Range for longitude.
 
-          Returns:
-          - list: List of tuples containing latitude and longitude.
+        Returns:
+        - np.array: Array containing the pairs of latitude and longitude.
         """
         lat_points = [random.uniform(*lat_range) for _ in range(num_points)]
         lon_points = [random.uniform(*lon_range) for _ in range(num_points)]
-        return lat_points, lon_points
+        return np.array(list(zip(lat_points, lon_points)))
 
     @staticmethod
     def generate_polygon_from_points(points):
@@ -92,7 +92,7 @@ class PolygonUtils:
         """
         # Create the Delaunay triangulation of the points
         triangles = Delaunay(points)
-        triangles = [Polygon(points[triangle]) for triangle in triangles.vertices]
+        triangles = [Polygon(points[triangle]) for triangle in triangles.simplices]
         alpha_triangles = [triangle for triangle in triangles if triangle.area < alpha]
         alpha_shape = unary_union(alpha_triangles)
         return alpha_shape
@@ -277,25 +277,29 @@ class PathPlannerUtils:
     """
 
     @staticmethod
-    def calculate_path_length(path):
+    def calculate_path_length(path, use_haversine=False):
         """
            Calculate the length of a given path.
 
            Parameters:
            - path: list of waypoints
+           - use_haversine: flag to determine whether to use Haversine formula for distance
 
            Returns:
            - Total length of the path
         """
         length = 0
         for i in range(1, len(path)):
-            x1, y1 = path[i - 1]
-            x2, y2 = path[i]
-            length += np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+            if use_haversine:
+                length += haversine_distance(path[i - 1], path[i])
+            else:
+                x1, y1 = path[i - 1]
+                x2, y2 = path[i]
+                length += np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
         return length
 
     @staticmethod
-    def count_turns_in_path(path, angle_threshold=60):
+    def count_turns_in_path(path, angle_threshold=0):
         """Count the number of turns in a path based on angle changes."""
         num_turns = 0
         for i in range(len(path) - 2):
@@ -416,6 +420,10 @@ class PathPlannerUtils:
         rotated_polygon = rotate(polygon, angle_degrees, origin='centroid')
         rotated_path = PathPlannerUtils.lawnmower_path(rotated_polygon, fov_width)
 
+        if len(rotated_path) <= 1:
+            print(f"Invalid path found with length {len(rotated_path)} for angle {angle_degrees}. Skipping...")
+            return []
+
         path_polygon = LineString(rotated_path)
         rotated_back_path_polygon = rotate(path_polygon, -angle_degrees, origin=rotated_polygon.centroid)
         return list(rotated_back_path_polygon.coords)
@@ -429,6 +437,8 @@ class PathPlannerUtils:
             path = PathPlannerUtils.compute_rotated_path(polygon, fov_width, angle)
             length = PathPlannerUtils.calculate_path_length(path)
 
+            if not path:
+                continue
             if length < best_length:
                 best_length = length
                 best_path = path
@@ -595,7 +605,7 @@ class PlottingUtils:
             current_color = PlottingUtils.colors[i % len(PlottingUtils.colors)]
             PlottingUtils._plot_polygon(poly, color=current_color)
             x, y = poly.exterior.xy
-            plt.plot(x, y, '-o', color=current_color)
+            plt.plot(x, y, '-o', color=current_color, label="My Data")
 
         plt.legend()
         plt.axis('equal')

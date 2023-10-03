@@ -13,7 +13,7 @@ from weather import WeatherData
 class Cost:
 
     def __init__(self, start_node: Node, end_node: Node, step_sizes: tuple = (0.3, 0.3, 100)):
-        self.distance_coeff = 0
+        self.distance_coeff = 1
         self.pvsystem_coeff = 1
         self.grid_extension = 0
         self.drone = None
